@@ -3,40 +3,73 @@ import cv2
 from ultralytics import YOLO
 import numpy as np
 from util import *
+from persistence import *
+
+
+def box_label(s_frame, p_box, label='', color=(0, 0, 0), label_color=(255, 255, 255)) -> None:
+    """
+        在视频帧中绘制矩形框及标记文本
+        :param s_frame 视频帧
+        :param p_box 由yolov8解析的当前视频帧中目标的box信息
+        :param label 标记文本内容
+        :param color 矩形框的颜色
+        :param label_color 标记文本颜色
+    """
+    # 目标矩形框的左上角和右下角坐标
+    p1, p2 = (int(p_box[0]), int(p_box[1])), (int(p_box[2]), int(p_box[3]))
+    # 绘制矩形框
+    cv2.rectangle(s_frame, p1, p2, color, thickness=1, lineType=cv2.LINE_AA)
+    if label:
+        # 得到要书写的文本的宽和长，用于给文本绘制背景色
+        w, h = cv2.getTextSize(label, 0, fontScale=0.5, thickness=1)[0]
+        # 确保显示的文本不会超出图片范围
+        outside = p1[1] - h >= 3
+        p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
+        cv2.rectangle(s_frame, p1, p2, color, -1, cv2.LINE_AA)  # 填充颜色
+        # 书写文本
+        cv2.putText(s_frame,
+                    label,
+                    (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    label_color,
+                    thickness=1,
+                    lineType=cv2.LINE_AA)
 
 
 class Tracker:
 
-    """
-        构造
-        :param model yolov8模型
-        :param video_path 视频路径
-    """
     def __init__(self, model: YOLO, video_path: str = '', **kwargs) -> None:
+        """
+            构造
+            :param model yolov8模型
+            :param video_path 视频路径
+            :param kwargs 使用yolov8目标追踪时，部分必要的参数
+        """
         self.__model = model
         self.__video_path = video_path
         self.__cap = cv2.VideoCapture(video_path)
         self.__statistics = target_statistics.Statistics()
         self.__statistics.set_frame_rate(self.__cap.get(cv2.CAP_PROP_FPS))
 
-        self.__classes = 0
-        if 'classes' in kwargs:
-            self.__classes = kwargs['classes']
-        self.__conf = 0.3
-        if 'conf' in kwargs:
-            self.__conf = kwargs['conf']
-        self.__persist = True
-        if 'persist' in kwargs:
-            self.__persist = kwargs['persist']
+        self.__classes = kwargs.get('classes') or 0
+        self.__conf = kwargs.get('conf') or 0.3
+        self.__persist = kwargs.get('persist') or True
+        self.__file_mapper = kwargs.get('file_mapper') or file_persistence.DefaultFileMapper()
+        self.__data_mapper = kwargs.get('data_mapper') or data_persistence.DefaultDataMapper()
 
     def read(self) -> None:
+        """
+            核心功能入口
+            读取视频并进行目标追踪
+        """
         counter = 0
         while self.__cap.isOpened():
             # 读取一帧图像
             success, frame = self.__cap.read()
             if success:
-                files = pic_util.frame_to_pic(frame)
-                file_url = None
+                file = pic_util.frame_to_pic(frame)
+                file_res = None
                 track_ids, results = self.track(frame, counter)
                 # 遍历该帧的所有目标
                 for track_id, box in zip(track_ids, results[0].boxes.data):
@@ -45,14 +78,12 @@ class Tracker:
                         self.__statistics.target_time()[track_id] = counter
                     if track_id not in self.__statistics.target_total():
                         self.__statistics.target_total()[track_id] = 0
-                        # if not file_url:
-                        #     file_url = http_client.file_upload(Constants.URI + Constants.URI_PIC_UPLOAD,
-                        #                                        files=files)
-                        # http_client.data_post(Constants.URI + Constants.URI_PERSON_FIRST,
-                        #                       data={'fileUrl': file_url, 'deviceId': device_id, 'personId': track_id})
+                        if not file_res:
+                            file_res = self.__file_mapper.save_file(file)
+                        self.__data_mapper.save_first_frame(track_id, counter, self.__statistics.frame_rate(), file_res)
 
                     # 绘制该目标的矩形框
-                    self.box_label(frame, box, '#' + str(track_id) + ' person', (167, 146, 11))
+                    box_label(frame, box, '#' + str(track_id) + ' person', (167, 146, 11))
                     # 绘制追踪线
                     if self.__persist:
                         # 得到该目标矩形框的中心点坐标(x, y)
@@ -80,41 +111,16 @@ class Tracker:
     def track(self, frame: cv2.UMat, counter: int) -> tuple[list[int], Any]:
         """
         在帧上运行YOLOv8跟踪，持续追踪帧间的物体
-        classes=0 只检测人体，可选: classes=[0,2,3]检测多种目标
-        conf为0.3表示只检测置信值大于0.3的目标。
-        persist为True表示保留跟踪信息
+        classes 检测对象类别 =0只检测人体，可选: classes=[0,2,3]检测多种目标
+        conf 置信值 为0.3表示只检测置信值大于0.3的目标。
+        persist 为True表示保留跟踪信息
+        :param frame 视频帧
+        :param counter 当前帧的帧数
+        :return 所有追踪id, 追踪结果
         """
         results = self.__model.track(frame, classes=self.__classes, conf=self.__conf, persist=self.__persist)
         track_ids = results[0].boxes.id.int().cpu().tolist()
-        self.__statistics.difference(track_ids, counter)
+        diff = self.__statistics.difference(track_ids, counter)
+        self.__data_mapper.save_second_frame(diff, counter, self.__statistics.frame_rate(),
+                                             self.__statistics.target_total())
         return track_ids, results
-
-    """
-        在帧中绘制矩形框及标记内容
-        :param s_frame 视频帧
-        :param p_box yolov8追踪box
-        :param label 标记内容
-        :param color 矩形框颜色 默认#000 灰色
-        :param label_color 文本颜色 默认#FFF 白色
-    """
-
-    def box_label(self, s_frame, p_box, label='', color=(0, 0, 0), label_color=(255, 255, 255)) -> None:
-        # 目标矩形框的左上角和右下角坐标
-        p1, p2 = (int(p_box[0]), int(p_box[1])), (int(p_box[2]), int(p_box[3]))
-        # 绘制矩形框
-        cv2.rectangle(s_frame, p1, p2, color, thickness=1, lineType=cv2.LINE_AA)
-        if label:
-            # 得到要书写的文本的宽和长，用于给文本绘制背景色
-            w, h = cv2.getTextSize(label, 0, fontScale=2 / 3, thickness=1)[0]
-            # 确保显示的文本不会超出图片范围
-            outside = p1[1] - h >= 3
-            p2 = p1[0] + w, p1[1] - h - 3 if outside else p1[1] + h + 3
-            cv2.rectangle(s_frame, p1, p2, color, -1, cv2.LINE_AA)  # 填充颜色
-            # 书写文本
-            cv2.putText(s_frame,
-                        label, (p1[0], p1[1] - 2 if outside else p1[1] + h + 2),
-                        0,
-                        2 / 3,
-                        label_color,
-                        thickness=1,
-                        lineType=cv2.LINE_AA)

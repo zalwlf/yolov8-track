@@ -22,10 +22,12 @@ class Statistics:
             value = self.__target_time.pop(di, None)
             if self.__target_total[di] != 0:
                 self.__target_total[di] += (counter + 1 - value) / self.__frame_rate
-                print(f'person {di} update total time : ({counter} + 1 - {value}) / {self.__frame_rate} = {self.__target_total[di]:.2f}s.')
+                print(f'person {di} update total time : '
+                      f'({counter} + 1 - {value}) / {self.__frame_rate} = {self.__target_total[di]:.2f}s.')
             else:
                 self.__target_total[di] = (counter + 1 - value) / self.__frame_rate
-                print(f'person {di} total time : ({counter} + 1 - {value}) / {self.__frame_rate} = {self.__target_total[di]:.2f}s.')
+                print(f'person {di} total time : '
+                      f'({counter} + 1 - {value}) / {self.__frame_rate} = {self.__target_total[di]:.2f}s.')
         return diff
 
     def target_time(self) -> dict[int, int]:
