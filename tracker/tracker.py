@@ -72,35 +72,36 @@ class Tracker:
                 file = pic_util.frame_to_pic(frame)
                 file_res = None
                 track_ids, results = self.track(frame, counter)
-                # 遍历该帧的所有目标
-                for track_id, box in zip(track_ids, results[0].boxes.data):
-                    # 判断是否有记录，没有则新增
-                    if track_id not in self.__statistics.target_time():
-                        self.__statistics.target_time()[track_id] = counter
-                    if track_id not in self.__statistics.target_total():
-                        self.__statistics.target_total()[track_id] = 0
-                        if not file_res:
-                            file_res = self.__file_mapper.save_file(file)
-                        self.__data_mapper.save_first_frame(track_id, counter, self.__statistics.frame_rate(), file_res,
-                                                            self.__dt)
+                if track_ids:
+                    # 遍历该帧的所有目标
+                    for track_id, box in zip(track_ids, results[0].boxes.data):
+                        # 判断是否有记录，没有则新增
+                        if track_id not in self.__statistics.target_time():
+                            self.__statistics.target_time()[track_id] = counter
+                        if track_id not in self.__statistics.target_total():
+                            self.__statistics.target_total()[track_id] = 0
+                            if not file_res:
+                                file_res = self.__file_mapper.save_file(file)
+                            self.__data_mapper.save_first_frame(track_id, counter, self.__statistics.frame_rate(), file_res,
+                                                                self.__dt)
 
-                    # 绘制该目标的矩形框color=BGR
-                    box_label(frame, box, '#' + str(track_id) + ' person', (0, 102, 255))
-                    # 绘制追踪线
-                    if self.__persist:
-                        # 得到该目标矩形框的中心点坐标(x, y)
-                        x1, y1, x2, y2 = box[:4]
-                        x = (x1 + x2) / 2
-                        y = (y1 + y2) / 2
-                        # 提取出该ID的以前所有帧的目标坐标，当该ID是第一次出现时，则创建该ID的字典
-                        track = self.__statistics.track_history()[track_id]
-                        track.append((float(x), float(y)))  # 追加当前目标ID的坐标
-                        # 只有当track中包括两帧以上的情况时，才能够比较前后坐标的先后位置关系
-                        if len(track) > 30:  # 在90帧中保留90个追踪点
-                            track.pop(0)
+                        # 绘制该目标的矩形框color=BGR
+                        box_label(frame, box, '#' + str(track_id) + ' person', (0, 102, 255))
                         # 绘制追踪线
-                        points = np.hstack(track).astype(np.int32).reshape((-1, 1, 2))
-                        cv2.polylines(frame, [points], isClosed=False, color=(230, 230, 230), thickness=10)
+                        if self.__persist:
+                            # 得到该目标矩形框的中心点坐标(x, y)
+                            x1, y1, x2, y2 = box[:4]
+                            x = (x1 + x2) / 2
+                            y = (y1 + y2) / 2
+                            # 提取出该ID的以前所有帧的目标坐标，当该ID是第一次出现时，则创建该ID的字典
+                            track = self.__statistics.track_history()[track_id]
+                            track.append((float(x), float(y)))  # 追加当前目标ID的坐标
+                            # 只有当track中包括两帧以上的情况时，才能够比较前后坐标的先后位置关系
+                            if len(track) > 30:  # 在90帧中保留90个追踪点
+                                track.pop(0)
+                            # 绘制追踪线
+                            points = np.hstack(track).astype(np.int32).reshape((-1, 1, 2))
+                            cv2.polylines(frame, [points], isClosed=False, color=(230, 230, 230), thickness=10)
 
                 cv2.imshow("YOLOv8", frame)  # 显示标记好的当前帧图像
                 counter += 1
@@ -121,9 +122,11 @@ class Tracker:
         :return 所有追踪id, 追踪结果
         """
         results = self.__model.track(frame, classes=self.__classes, conf=self.__conf, persist=self.__persist)
-        track_ids = results[0].boxes.id.int().cpu().tolist()
-        diff = self.__statistics.difference(track_ids, counter)
-        if len(diff) != 0:
-            self.__data_mapper.save_second_frame(diff, counter, self.__statistics.frame_rate(),
-                                                 self.__statistics.target_total(), self.__dt)
+        track_ids = None
+        if results[0].boxes.id is not None:
+            track_ids = results[0].boxes.id.int().cpu().tolist()
+            diff = self.__statistics.difference(track_ids, counter)
+            if len(diff) != 0:
+                self.__data_mapper.save_second_frame(diff, counter, self.__statistics.frame_rate(),
+                                                     self.__statistics.target_total(), self.__dt)
         return track_ids, results
