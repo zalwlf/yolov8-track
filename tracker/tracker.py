@@ -84,8 +84,8 @@ class Tracker:
                         self.__data_mapper.save_first_frame(track_id, counter, self.__statistics.frame_rate(), file_res,
                                                             self.__dt)
 
-                    # 绘制该目标的矩形框
-                    box_label(frame, box, '#' + str(track_id) + ' person', (167, 146, 11))
+                    # 绘制该目标的矩形框color=BGR
+                    box_label(frame, box, '#' + str(track_id) + ' person', (0, 102, 255))
                     # 绘制追踪线
                     if self.__persist:
                         # 得到该目标矩形框的中心点坐标(x, y)

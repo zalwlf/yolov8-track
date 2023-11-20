@@ -1,4 +1,3 @@
-
 URI = "http://localhost:8064/"
 
 URI_PIC_UPLOAD = "opencv/upload"
