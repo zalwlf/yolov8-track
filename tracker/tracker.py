@@ -57,6 +57,7 @@ class Tracker:
         self.__persist = kwargs.get('persist') or True
         self.__file_mapper = kwargs.get('file_mapper') or file_persistence.DefaultFileMapper()
         self.__data_mapper = kwargs.get('data_mapper') or data_persistence.DefaultDataMapper()
+        self.__dt = kwargs.get('dt') or None
 
     def read(self) -> None:
         """
@@ -80,7 +81,8 @@ class Tracker:
                         self.__statistics.target_total()[track_id] = 0
                         if not file_res:
                             file_res = self.__file_mapper.save_file(file)
-                        self.__data_mapper.save_first_frame(track_id, counter, self.__statistics.frame_rate(), file_res)
+                        self.__data_mapper.save_first_frame(track_id, counter, self.__statistics.frame_rate(), file_res,
+                                                            self.__dt)
 
                     # 绘制该目标的矩形框
                     box_label(frame, box, '#' + str(track_id) + ' person', (167, 146, 11))
@@ -121,6 +123,7 @@ class Tracker:
         results = self.__model.track(frame, classes=self.__classes, conf=self.__conf, persist=self.__persist)
         track_ids = results[0].boxes.id.int().cpu().tolist()
         diff = self.__statistics.difference(track_ids, counter)
-        self.__data_mapper.save_second_frame(diff, counter, self.__statistics.frame_rate(),
-                                             self.__statistics.target_total())
+        if len(diff) != 0:
+            self.__data_mapper.save_second_frame(diff, counter, self.__statistics.frame_rate(),
+                                                 self.__statistics.target_total(), self.__dt)
         return track_ids, results
