@@ -88,18 +88,36 @@ class Tracker:
                 file = pic_util.frame_to_pic(frame)
                 file_res = None
                 track_ids, results = self.track(frame, counter)
-                if track_ids:
-                    # 遍历该帧的所有目标
-                    for track_id, box in zip(track_ids, results[0].boxes.data):
-                        # 判断是否有记录，没有则新增
-                        if track_id not in self.__statistics.target_time():
-                            self.__statistics.target_time()[track_id] = counter
-                        if track_id not in self.__statistics.target_total():
-                            self.__statistics.target_total()[track_id] = 0
-                            if not file_res:
-                                file_res = self.__file_mapper.save_file(file)
-                            self.__data_mapper.save_first_frame(track_id, counter, self.__statistics.frame_rate(), file_res,
-                                                                self.__dt)
+                if track_ids is None or not track_ids:
+                    counter += 1
+                    is_exit = self.show_exit(frame)
+                    if is_exit:
+                        break
+                    continue
+
+                # 遍历该帧的所有目标
+                for track_id, box in zip(track_ids, results[0].boxes.data):
+                    # 判断是否有记录，没有则新增
+                    if track_id not in self.__statistics.target_time():
+                        self.__statistics.target_time()[track_id] = counter
+                    if track_id not in self.__statistics.target_total():
+                        self.__statistics.target_total()[track_id] = 0
+                    if not file_res:
+                        file_res = self.__file_mapper.save_file(file)
+                        self.__data_mapper.save_first_frame(track_id, counter, self.__statistics.frame_rate(),
+                                                            file_res,
+                                                            self.__dt)
+                    # 绘制追踪线
+                    # 得到该目标矩形框的中心点坐标(x, y)
+                    x1, y1, x2, y2 = box[:4]
+                    x = (x1 + x2) / 2
+                    y = (y1 + y2) / 2
+                    # 提取出该ID的以前所有帧的目标坐标，当该ID是第一次出现时，则创建该ID的字典
+                    track = self.__statistics.track_history()[track_id]
+                    track.append((float(x), float(y)))  # 追加当前目标ID的坐标
+                    # 只有当track中包括两帧以上的情况时，才能够比较前后坐标的先后位置关系
+                    if len(track) > 30:  # 在90帧中保留90个追踪点
+                        track.pop(0)
 
                     if self.__imshow:
                         # 绘制该目标的矩形框color=BGR
