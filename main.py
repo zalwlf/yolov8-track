@@ -10,5 +10,5 @@ if __name__ == '__main__':
     # tracker.Tracker(model, 'demo.mp4', persist=True, file_mapper=remote_file_mapper.RemoteFileMapper(),
     #                data_mapper=remote_data_mapper.RemoteDataMapper()).read()
     # 不推送结果
-    tracker.Tracker(model, 'demo.mp4', persist=True, file_mapper=file_persistence.DefaultFileMapper(),
+    tracker.Tracker(model, 'demo_like_dog.mp4', imshow=False, file_mapper=file_persistence.DefaultFileMapper(),
                     data_mapper=data_persistence.DefaultDataMapper()).read()
